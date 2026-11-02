@@ -212,10 +212,21 @@ async def periodic_backup():
 async def before_backup():await bot.wait_until_ready()
 
 async def run():
+  
+async def run():
     await store.connect()
-    init_message_restore, message_cleanup = install_message_restore(bot, store.pool)
-    logging.info("message_restore registered: %s", bool(bot.tree.get_command("message_restore")))
+
+    init_message_restore, message_cleanup = install_message_restore(
+        bot, store.pool
+    )
+
+    logging.info(
+        "message_restore registered: %s",
+        bool(bot.tree.get_command("message_restore"))
+    )
+
     await init_message_restore()
+
     app = build_app(bot, store)
     if app is None:
         raise RuntimeError("Dashboard build_app() returned None")
@@ -229,19 +240,25 @@ async def run():
             interface="asgi3"
         )
     )
+
     periodic_backup.start()
     message_cleanup.start()
+
     try:
         async with bot:
-            # Global commands are synced in setup_hook after login.
-            await asyncio.gather(bot.start(os.environ['DISCORD_TOKEN']),server.serve())
+            await asyncio.gather(
+                bot.start(os.environ["DISCORD_TOKEN"]),
+                server.serve()
+            )
     finally:
-        periodic_backup.cancel();message_cleanup.cancel();await store.close()
-if __name__=='__main__':asyncio.run(run())
-  try:
-        async with bot:
-            # Global commands are synced in setup_hook after login.
-            await asyncio.gather(bot.start(os.environ['DISCORD_TOKEN']),server.serve())
+        periodic_backup.cancel()
+        message_cleanup.cancel()
+        await store.close()
+
+
+if __name__ == "__main__":
+    asyncio.run(run())
+
     finally:
         periodic_backup.cancel();message_cleanup.cancel();await store.close()
 if __name__=='__main__':asyncio.run(run())
