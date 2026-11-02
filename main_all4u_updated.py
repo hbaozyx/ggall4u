@@ -16,7 +16,27 @@ intents=discord.Intents.default();intents.members=True
 intents.message_content=os.getenv('ENABLE_MESSAGE_CONTENT','true').lower()=='true'
 class SecurityBot(commands.Bot):
     async def setup_hook(self):
-        await self.tree.sync()
+        # All4u installs message_restore before bot.start(), so it is in this tree.
+        names = [command.name for command in self.tree.get_commands()]
+        logging.info('Local slash commands (%d): %s', len(names), ', '.join(names))
+        try:
+            synced = await self.tree.sync()
+            logging.info('Global slash commands synced (%d): %s',
+                         len(synced), ', '.join(command.name for command in synced))
+        except discord.HTTPException:
+            logging.exception('Global slash command sync failed')
+            raise
+
+        # Optional: sync immediately to a testing server. Global commands remain intact.
+        guild_id = os.getenv('DISCORD_GUILD_ID') or os.getenv('GUILD_ID')
+        if guild_id:
+            try:
+                guild = discord.Object(id=int(guild_id))
+                self.tree.copy_global_to(guild=guild)
+                guild_synced = await self.tree.sync(guild=guild)
+                logging.info('Guild %s slash commands synced (%d)', guild_id, len(guild_synced))
+            except (ValueError, discord.HTTPException):
+                logging.exception('Guild-specific command sync failed for %s', guild_id)
 
 bot=SecurityBot(command_prefix=commands.when_mentioned, intents=intents,help_command=None)
 store=Store();security=Security(bot,store)
@@ -74,23 +94,3 @@ async def security_set(i:discord.Interaction,feature:app_commands.Choice[str],en
 @bot.tree.command(description='Choose a security logging channel')
 @app_commands.guild_only()
 @admin()
-async def security_logs(i:discord.Interaction,channel:discord.TextChannel):
-    cfg=await store.config(i.guild_id);cfg['log_channel_id']=channel.id;await store.put(i.guild_id,cfg)
-    await respond(i,'Logging channel: '+channel.mention)
-@bot.tree.command(description='Trust an administrator (server owner only)')
-@app_commands.guild_only()
-async def trusted_add(i:discord.Interaction,member:discord.Member):
-    if i.user.id!=i.guild.owner_id:return await respond(i,'Only the server owner can change trust.')
-    cfg=await store.config(i.guild_id);ids=set(cfg.get('trusted',[]));ids.add(member.id);cfg['trusted']=sorted(ids);await store.put(i.guild_id,cfg)
-    await respond(i,f'Trusted: {member.mention}')
-@bot.tree.command(description='Remove a trusted user (server owner only)')
-@app_commands.guild_only()
-async def trusted_remove(i:discord.Interaction,member:discord.Member):
-    if i.user.id!=i.guild.owner_id:return await respond(i,'Only the server owner can change trust.')
-    cfg=await store.config(i.guild_id);cfg['trusted']=[x for x in cfg.get('trusted',[]) if x!=member.id];await store.put(i.guild_id,cfg)
-    await respond(i,'Removed from trusted list.')
-@bot.tree.command(description='Create server structure backup')
-@app_commands.guild_only()
-@admin()
-async def backup_create(i:discord.Interaction):
-    await i.response.defer(ephemeral=True,thinking=True)
