@@ -1,0 +1,18 @@
+ALL4U - PATCH SAO LUU TIN NHAN POSTGRESQL
+
+1. Sao luu repository GitHub truoc khi thay doi.
+2. Thay 3 file main.py, message_restore.py, store.py trong repository bang cac file tu ZIP nay.
+3. GIU NGUYEN cac file security.py, recovery.py, dashboard.py va requirements.txt hien tai.
+4. Railway Variables: DATABASE_URL phai tro toi PostgreSQL service; ENABLE_MESSAGE_CONTENT=true.
+5. Discord Developer Portal > Bot > Privileged Gateway Intents > bat Message Content Intent.
+6. Kiem tra bot co View Channel, Read Message History o kenh can sao luu.
+7. Redeploy Railway. Deploy Logs phai co 'Persistent message archive initialized; automatic expiration disabled'.
+8. Trong Discord chay /message_backup_status; /message_backup de nap tin nhan hien con tren kenh.
+9. Gui mot tin nhan THU MOI, cho bot ghi lai, xoa tin nhan, sau do /message_deleted_list va /message_restore voi message_id.
+
+CANH BAO:
+- ZIP nay la ban va 3 file, khong phai toan bo repository.
+- Khong the phuc hoi tin nhan chua tung duoc bot sao luu truoc khi xoa.
+- File dinh kem chi luu URL, URL co the het han.
+- 'Khong tu het han' khong co nghia la luu tru vo han dung luong: phu thuoc PostgreSQL va chinh sach Railway.
+- Ban nen thong bao cho thanh vien server ve viec luu tru tin nhan va gioi han truy cap du lieu.

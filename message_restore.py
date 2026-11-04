@@ -1,6 +1,7 @@
 """Persistent message archive for All4u; PostgreSQL is the source of truth."""
 import json
 import logging
+import datetime
 import discord
 from discord import app_commands
 from discord.ext import tasks
@@ -23,7 +24,7 @@ def install(bot, pool):
         logging.info('Persistent message archive initialized; automatic expiration disabled')
 
     async def save(message):
-        if not message.guild or message.author.bot or isinstance(message.channel, discord.Thread):
+        if not message.guild or message.author.bot:
             return
         attachments = [{'name': a.filename, 'url': a.url, 'size': a.size} for a in message.attachments]
         try:
@@ -36,6 +37,18 @@ def install(bot, pool):
                 message.content,message.created_at,json.dumps(attachments))
         except Exception:
             logging.exception('Message backup failed: %s', message.id)
+
+    async def edited_raw(payload):
+        if not payload.guild_id or not payload.data: return
+        # A cached on_message_edit event may not fire after a restart.
+        data = payload.data
+        if 'content' not in data: return
+        try:
+            await pool.execute('''UPDATE message_restore_archive SET content=$3
+                WHERE guild_id=$1 AND message_id=$2 AND deleted_at IS NULL''',
+                payload.guild_id, payload.message_id, data['content'])
+        except Exception:
+            logging.exception('Raw message edit tracking failed: %s', payload.message_id)
 
     async def deleted(payload):
         if not payload.guild_id: return
@@ -74,7 +87,10 @@ def install(bot, pool):
         row=await pool.fetchrow('''SELECT * FROM message_restore_archive
             WHERE guild_id=$1 AND message_id=$2 AND deleted_at IS NOT NULL''',i.guild_id,int(message_id))
         if not row:
-            return await send_private(i,'Không tìm thấy tin nhắn đã xóa trong bản sao lưu. Kiểm tra ID, Message Content Intent và dữ liệu PostgreSQL.')
+            existing=await pool.fetchrow('SELECT deleted_at FROM message_restore_archive WHERE guild_id=$1 AND message_id=$2',i.guild_id,int(message_id))
+            if existing:
+                return await send_private(i,'Tin nhắn đã được sao lưu nhưng chưa ghi nhận sự kiện xóa. Kiểm tra đúng ID và quyền bot.')
+            return await send_private(i,'Không tìm thấy ID này trong PostgreSQL. Bot chỉ khôi phục được tin nhắn đã sao lưu trước khi xóa. Dùng /message_backup_status để kiểm tra.')
         content=row['content'] or '[Không có nội dung văn bản]'
         files=row['attachments']
         if isinstance(files,str): files=json.loads(files)
@@ -115,7 +131,8 @@ def install(bot, pool):
     @app_commands.describe(channel='Channel to back up',limit='Recent messages to read (1–1000)')
     async def message_backup(i:discord.Interaction,channel:discord.TextChannel,limit:app_commands.Range[int,1,1000]=100):
         await i.response.defer(ephemeral=True)
-        if not channel.permissions_for(i.guild.me).read_message_history:
+        perms=channel.permissions_for(i.guild.me)
+        if not (perms.view_channel and perms.read_message_history):
             return await send_private(i,'Bot thiếu quyền Read Message History.')
         count=0
         try:
@@ -127,10 +144,24 @@ def install(bot, pool):
             return await send_private(i,'Không thể đọc lịch sử kênh. Kiểm tra quyền View Channel và Read Message History.')
         await send_private(i,f'Đã xử lý {count} tin nhắn gần đây từ {channel.mention}.')
 
+    @app_commands.command(name='message_deleted_list',description='List recently deleted messages saved in PostgreSQL')
+    @app_commands.guild_only()
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.checks.has_permissions(administrator=True)
+    async def message_deleted_list(i:discord.Interaction):
+        await i.response.defer(ephemeral=True)
+        rows=await pool.fetch('''SELECT message_id,channel_id,deleted_at FROM message_restore_archive
+            WHERE guild_id=$1 AND deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT 15''',i.guild_id)
+        if not rows:
+            return await send_private(i,'Chưa có tin nhắn đã xóa được lưu. Kiểm tra /message_backup_status.')
+        lines=[f"ID: {r['message_id']} | Kênh: {r['channel_id']} | Xóa: {r['deleted_at']:%Y-%m-%d %H:%M} UTC" for r in rows]
+        await send_private(i,'15 tin nhắn đã xóa gần nhất:\n'+'\n'.join(lines))
+
     bot.add_listener(save,'on_message')
     async def edited(before,after): await save(after)
     bot.add_listener(edited,'on_message_edit')
+    bot.add_listener(edited_raw,'on_raw_message_edit')
     bot.add_listener(deleted,'on_raw_message_delete')
     bot.add_listener(bulk_deleted,'on_raw_bulk_message_delete')
-    for command in (message_restore,message_backup_status,message_backup): bot.tree.add_command(command)
+    for command in (message_restore,message_backup_status,message_backup,message_deleted_list): bot.tree.add_command(command)
     return init,cleanup
