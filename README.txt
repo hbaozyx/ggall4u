@@ -1,16 +1,15 @@
-ALL4U - PERSISTENT MESSAGE ARCHIVE
+ALL4U - Message restore patch (3 Python files)
 
-Files: main.py (existing bot), message_restore.py (replacement module).
-Keep the other project files (store.py, security.py, recovery.py, dashboard.py, requirements.txt) unchanged.
+Replace these three files in the ROOT of your GitHub repository:
+- main.py
+- message_restore.py
+- store.py
 
-1. Replace main.py and message_restore.py in your existing GitHub repository.
-2. Railway: connect the bot service to a persistent PostgreSQL service and set DATABASE_URL to its internal connection string.
-3. In Discord Developer Portal > Bot, enable MESSAGE CONTENT INTENT. Railway Variables: ENABLE_MESSAGE_CONTENT=true.
-4. Ensure the bot has View Channel, Read Message History, Send Messages permissions.
-5. Redeploy and check logs for "Persistent message archive initialized".
-6. Use /message_backup_status, /message_backup, /message_restore.
+Keep your existing security.py, recovery.py, dashboard.py, requirements.txt and other project files.
+Commit to GitHub and confirm Railway deploys the NEW commit.
+Expected startup log: Local slash commands (22), Global slash commands synced (22).
+Commands: /message_restore, /message_backup_status, /message_backup, /message_deleted_list.
 
-There is no time-based deletion. Storage capacity, database availability, and any provider retention policies still apply.
-Attachments store metadata/URLs, not downloaded file bytes. URLs may expire.
-Old records already deleted by the previous 24h cleanup cannot be recovered.
-This package is based on a previously saved All4u main.py, not verified against the currently deployed GitHub commit.
+Message archive does not automatically expire; PostgreSQL retention still depends on your database service and storage.
+Already-deleted messages that were never captured cannot be recovered.
+Ensure Message Content Intent is enabled in Discord Developer Portal and ENABLE_MESSAGE_CONTENT=true in Railway.
